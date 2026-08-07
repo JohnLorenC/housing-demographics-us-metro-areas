@@ -44,7 +44,7 @@ The project involves:
 - readr
 - knitr
 
-## Key Findings
+## Findings
 
 Differences in income and poverty levels were identified in metropolitan regions and by household type. Differences in poverty rates between Los Angeles and New York are used to assess the difference in poverty rates among single individuals.
 
