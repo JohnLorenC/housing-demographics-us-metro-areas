@@ -1,0 +1,973 @@
+---
+title: "Housing & Demographics Across U.S. Metro Areas"
+author: "John Loren Chapman"
+date: 7/9/2026
+format: html
+execute:
+  echo: false
+---
+
+# Introduction
+
+This report is on Core Based Statistical Area (CBSA). According to the US Census Bureau, A CBSA is a geographic region which looks at household and family income patterns across US States. Typically, the data is made up of one or more counties centered around an urban core with a population of at least 10,000 people. So from a data science perspective, they allow researchers like me to look at economic and demographic data across different regions. That said, the goal for this report is to see how households at different income levels are distributed geographically, as well as to look at whether population size alone explains observed patterns.
+
+# Data and sources
+
+#### `fips_abbrev.csv` - State FIPS code look up table
+
+- A table mapping U.S. state names to their Federal Information Processing Standards (FIPS) numeric codes and official U.S. Postal Service (USPS) two-letter abbreviations. The FIPS codes are used in the household and family micro data files to look up the state of residence (Source: U.S. Census Bureau).
+
+#### `hhpub24.csv` - Household-level public use file
+
+- This file holds one record for each sampled household. It has geographic identifiers, household composition variables, and income information aggregated at the household level (Source: CPS ASEC 2024).
+
+#### `ffpub24.csv` - Family-Level Public Use File
+
+- File containing family-level records, where each family within a household is represented separately. It provides more detailed information about family composition, relationships, and poverty status (Source: CPS ASEC 2024).
+
+# Household-level analysis
+
+## Three Income Level Maps
+To understand the geographic distribution of households across income levels, I created three maps showing the number of households in each state. These plots are split into low income (<$15,000), middle income ($50,000–$100,000), and high income ($150,000+) brackets. The CPS income variable HEFAMINC was used to classify households into these three categories.
+```{r, echo = FALSE}
+#| echo: false
+#| eval: true
+#| message: false
+#| warning: false
+
+# Load necessary libraries
+suppressPackageStartupMessages({
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+library(scales)
+library(maps)
+})
+
+# Load FIPS state code look up table
+fips <- read.csv("fips_abbrev.csv", header = TRUE, stringsAsFactors = FALSE)
+fips <- fips[, 1:3]
+colnames(fips) <- c("State", "FIPS", "USPS")
+
+# Load household-level data
+hh <- read.csv("hhpub24.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# Load family-level data
+family <- read.csv("ffpub24.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# Clean household data
+hh_clean <- hh %>%
+  filter(HEFAMINC >= 0) %>%           
+  mutate(FIPS = as.numeric(GESTFIPS)) %>%  
+  left_join(fips, by = "FIPS") %>%
+  filter(!is.na(State))
+
+# Load state map data
+states <- map_data("state")
+
+# Low Income (HEFAMINC 1-4)
+low_income <- hh_clean %>%
+  filter(HEFAMINC %in% c(1, 2, 3, 4))
+
+low_income_counts <- low_income %>%
+  group_by(State, USPS) %>%
+  summarise(Low_Income_Households = n(), .groups = "drop") %>%
+  mutate(region = tolower(State))
+
+# Middle Income (HEFAMINC 9-12)
+middle_income <- hh_clean %>%
+  filter(HEFAMINC %in% c(9, 10, 11, 12))
+
+middle_income_counts <- middle_income %>%
+  group_by(State, USPS) %>%
+  summarise(Middle_Income_Households = n(), .groups = "drop") %>%
+  mutate(region = tolower(State))
+
+# High Income (HEFAMINC 14-16)
+high_income <- hh_clean %>%
+  filter(HEFAMINC %in% c(14, 15, 16))
+
+high_income_counts <- high_income %>%
+  group_by(State, USPS) %>%
+  summarise(High_Income_Households = n(), .groups = "drop") %>%
+  mutate(region = tolower(State))
+
+# Join each income level with map data
+low_income_map <- states %>%
+  left_join(low_income_counts, by = "region")
+
+middle_income_map <- states %>%
+  left_join(middle_income_counts, by = "region")
+
+high_income_map <- states %>%
+  left_join(high_income_counts, by = "region")
+
+#Low income households plot
+ggplot(low_income_map, aes(x = long, y = lat, group = group, fill = Low_Income_Households)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "darkred",
+    labels = comma,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 1: Low Income Households by State",
+    subtitle = "Households earning less than $15,000 per year",
+    fill = "Number of Households",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal() 
+```
+This map shows the geographic  distribution of low income households across the United States. It uses a color gradient where darker red shades show a higher number of households earning less than $15,000 per year. The darkest states are California, Texas, Florida, and New York, which together account for a large portion of all low income households. States in the Midwest and Northeast appear lighter, while states like Wyoming, Vermont, and North Dakota have the fewest low income households. This pattern could be explained by population size, as the darkest states are also the ones with higher populations.
+```{r, echo = FALSE}
+# Middle income households plot
+ggplot(middle_income_map, aes(x = long, y = lat, group = group, fill = Middle_Income_Households)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "darkblue",
+    labels = comma,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 2: Middle Income Households by State",
+    subtitle = "Households earning between $50,000 and $100,000 per year",
+    fill = "Number of Households",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+
+
+```
+This figure shows the distribution of middle income households earning between $50,000 and $100,000 per year. Compared to figure 1 the same states still appear darkest, and again is consistent with their large populations. One subtle thing to note however is how this map shows a more balanced distribution across the country. Around Illinois, Pennsylvania, and Ohio appear relatively dark, meaning that middle income households are more evenly spread across urban and suburban areas. This pattern tells us that the American middle class is a little more spread out than that of the concentration of poverty or extreme wealth seen in the next map.
+```{r, echo = FALSE}
+# High income households plot
+ggplot(high_income_map, aes(x = long, y = lat, group = group, fill = High_Income_Households)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "darkgreen",
+    labels = comma,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 3: High Income Households by State",
+    subtitle = "Households earning $150,000 or more per year",
+    fill = "Number of Households",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+```
+Figure 3 looks at the geographic distribution of high income households earning $150,000 or more per year. While California, Texas, and New York still remain dark, a reasonable difference to point out in this one are states like Massachusetts, Virginia, Maryland, and New Jersey as darker regions. That said, there is more of a concentration of high income households along the East Coast. Based on these three income maps, the data helps me show how areas with large financial, technology, and government sectors remain the darkest while deep Southern states stay relatively lighter. These lighter states mean fewer high income households relative to other regions. It is also important to note that these maps display absolute counts, not rates. So a state with a large population will naturally appear darker regardless of its economic conditions. My next map addresses this limitation by mapping the poverty rates (proportions) rather than the absolute counts.
+
+## State Poverty Map
+```{r, echo = FALSE}
+#lookup tables
+poverty_lookup <- data.frame(
+  household_size = 1:5,
+  poverty_guideline = c(15650, 21150, 26650, 32150, 37650)
+)
+
+income_lookup <- data.frame(
+  HEFAMINC = 1:16,
+  income_midpoint = c(5000, 7500, 11250, 13750, 17500, 22500, 27500, 35000,
+                      45000, 55000, 67500, 87500, 125000, 175000, 225000, 275000)
+)
+
+size_lookup <- data.frame(
+  H_HHNUM = 1:5,
+  household_size = 1:5
+)
+
+#hh_poverty using joins and filters
+hh_poverty <- hh_clean %>%
+  filter(H_HHNUM >= 1 & H_HHNUM <= 5) %>%
+  left_join(size_lookup, by = "H_HHNUM") %>%
+  left_join(poverty_lookup, by = "household_size") %>%
+  left_join(income_lookup, by = "HEFAMINC") %>%
+  filter(!is.na(income_midpoint))
+
+#below/above poverty
+below_poverty <- hh_poverty %>%
+  filter(income_midpoint < poverty_guideline) %>%
+  mutate(below_poverty = 1)
+
+above_poverty <- hh_poverty %>%
+  filter(income_midpoint >= poverty_guideline) %>%
+  mutate(below_poverty = 0)
+
+hh_poverty <- bind_rows(below_poverty, above_poverty)
+
+# Aggregate by state, join w/ map data
+state_poverty <- hh_poverty %>%
+  group_by(State, USPS) %>%
+  summarise(
+    total_households = n(),
+    below_poverty_count = sum(below_poverty),
+    poverty_proportion = below_poverty_count / total_households,
+    .groups = "drop"
+  ) %>%
+  mutate(region = tolower(State))
+
+poverty_map <- states %>%
+  left_join(state_poverty, by = "region")
+
+# Plot
+ggplot(poverty_map, aes(x = long, y = lat, group = group, fill = poverty_proportion)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "red",
+    labels = percent,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 4: Proportion of Households Below Poverty Line by State",
+    fill = "Proportion Below Poverty",
+    caption = "Source:  United States Department of Health and Human Services (HHS)"
+  ) +
+  theme_minimal()
+```
+Unlike the previous maps this shows a very different pattern. We can see that the darkest states are now Mississippi, Louisiana, Arkansas, and West Virginia. These states have the highest poverty rates as we can see, with some cases being well over 10% of households below the poverty line. Based on what I understand about these states and can find online with a quick Google search, historically they have faced many economic challenges, especially with how they deal with healthcare and their education systems. Knowing this, this map provides a more accurate picture of economic hardship rather than population size. While California has many low income households in absolute terms, its poverty rate is relatively modest when compared to states like Mississippi and Louisiana.
+
+## Housing Types LA vs NY
+```{r, echo = FALSE}
+# look up table for housing types
+# Codes 1-5 = House/Apartment, 6-7 = Mobile Home, 8-9 = Group Quarters
+housing_lookup <- data.frame(
+  HRHTYPE = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+  housing_type = c("Unknown","House/Apartment","House/Apartment","House/Apartment","House/Apartment",
+    "House/Apartment","Mobile Home","Mobile Home","Group Quarters","Group Quarters","Other"
+  )
+)
+
+# lookup table for CBSA codes 
+cbsa_lookup <- data.frame(
+  GTCBSA = c(31080, 35620),
+  cbsa_name = c("Los Angeles-Long Beach-Anaheim", "New York-Newark-Jersey City")
+)
+
+# Filter to LA and NY areas. Join w/ look up tables
+hh_cbsa <- hh_clean %>%
+  filter(GTCBSA %in% c(31080, 35620)) %>%
+  left_join(cbsa_lookup, by = "GTCBSA") %>%
+  left_join(housing_lookup, by = "HRHTYPE") %>%
+  filter(!is.na(cbsa_name))
+
+# Count housing types
+housing_counts <- hh_cbsa %>%
+  group_by(cbsa_name, housing_type) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(cbsa_name) %>%
+  mutate(Proportion = Count / sum(Count))
+
+# Plot
+ggplot(housing_counts, aes(x = housing_type, y = Proportion, fill = cbsa_name)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Figure 5: Housing Type Distribution (LA vs NYC)",
+    x = "Housing Type",
+    y = "Proportion of Households",
+    fill = "Metropolitan Area",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+```
+Figure 5 takes a closer look into housing distributions specifically in housing type distributions in the Los Angeles and New York metropolitan areas. Here, I am using the HRHTYPE variable from the CPS household file, where the most common housing type in both areas are houses or apartments. This is expected given that both regions are densely populated urban centers. They are also where single-family homes and multi-unit apartment buildings are popular in its housing stock. There are then mobile homes, which seem to represent a very small proportion of households in both areas. This could be due to the fact that mobile homes are more common in rural and suburban areas than in major urban centers. The proportion of mobile homes also is slightly higher in L.A than in New York, possibly because of the greater availability of land in Southern California relative to the densely populated New York metropolitan area. The "other" and "unknown" data most likely represent group quarters and is a very small proportion of households in both areas, as these are typically associated with universities and other institutions from what we are told.
+
+## Single Poverty LA vs NY
+```{r, echo = FALSE}
+#----Figure 6 Data Prep----
+# Single individuals are households with H_HHNUM == 1
+single_households <- hh_poverty %>%
+  filter(H_HHNUM == 1) %>%
+  filter(GTCBSA %in% c(31080, 35620)) %>%
+  left_join(cbsa_lookup, by = "GTCBSA") %>%
+  filter(!is.na(cbsa_name))
+
+# Calculate poverty rate for single individuals by CBSA
+single_poverty <- single_households %>%
+  group_by(cbsa_name) %>%
+  summarise(
+    total_single = n(),
+    below_poverty_count = sum(below_poverty),
+    poverty_proportion = below_poverty_count / total_single,
+    .groups = "drop"
+  )
+
+#----Figure 6 plot----
+# Plot
+ggplot(single_poverty, aes(x = cbsa_name, y = poverty_proportion, fill = cbsa_name)) +
+  geom_col(width = 0.6) +
+  scale_y_continuous(labels = percent, limits = c(0, max(single_poverty$poverty_proportion) * 1.2)) +
+  geom_text(aes(label = percent(poverty_proportion, accuracy = 0.1)), 
+            vjust = -0.5, 
+            size = 5) +
+  labs(
+    title = "Figure 6: Poverty Rate Among Single Individuals",
+    subtitle = "Los Angeles vs New York Metropolitan Areas",
+    x = "Metropolitan Area",
+    y = "Proportion Below Poverty",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal() 
+```
+To compare rates of poverty for single persons in houses or apartments in Los Angeles and New York, I first filtered the household data to include only single person households (H_HHNUM == 1) in the two CBSA areas (Los Angeles-Long Beach-Anaheim, code 31080, and New York-Newark-Jersey City, code 35620). I then used the poverty classification by comparing the income midpoint of each household to the 2025 HHS poverty guideline for a single person ($15,650). I calculated the poverty rate in each metropolitan area by dividing the number of single persons with income below the poverty guideline (multiplied times 100) by the total number of single persons in the metropolitan area. It is then obvious to see that a higher percentage of single persons in LA than in New York is below the poverty line. I don't have a good explanation as to why this is (potentially higher cost of living or difference in housing costs…) but I believe more analysis would be needed to figure out whether it is statistically significant or just due to sampling variability.
+
+## Missingness & Imputation
+```{r, echo = FALSE}
+#----Data Missingness----
+any_na <- any(is.na(hh_clean))
+cat("Are there missing values in the dataset?", any_na, "\n")
+
+# Count total missing values
+total_na <- sum(is.na(hh_clean))
+cat("Total missing values:", total_na, "\n")
+```
+
+The household data set was checked for missing values in variables. My analysis shows that there are no missing values in the cleaned data set (hh_clean). This is because the data preparation process included filtering out observations with missing income information (HEFAMINC >= 0) and removing any rows that could not be matched to a valid state FIPS code. There were also no imputation flags found in the household data. The CPS data dictionary tells us that imputation is sometimes used to fill missing values, but in this data set no imputation was necessary after the cleaning steps were applied. As a data scientist, this is important for showing the validity of my results as when data is missing the analysis may be biased.
+
+# Family-level analysis
+## Family Types by Poverty Status
+```{r, echo = FALSE}
+#----Figure 7 Data Prep----
+# Create lookup table for family type labels
+family_type_lookup <- data.frame(
+  FKIND = 1:3,
+  family_type = c(
+    "Married Couple",
+    "Male Householder",
+    "Female Householder"
+  )
+)
+
+# Create lookup table for poverty status labels
+poverty_lookup <- data.frame(
+  FAMLIS = c(1, 2, 3, 4),
+  poverty_status = c(
+    "Above Poverty",
+    "Below Poverty",
+    "Near Poverty",
+    "Other"
+  )
+)
+
+# Add labels using joins
+family_poverty <- family %>%
+  left_join(family_type_lookup, by = "FKIND") %>%
+  left_join(poverty_lookup, by = "FAMLIS") %>%
+  filter(!is.na(poverty_status))
+
+# Count by family type and poverty status
+family_poverty_counts <- family_poverty %>%
+  group_by(family_type, poverty_status) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(family_type) %>%
+  mutate(Proportion = Count / sum(Count))
+
+#----Figure 7 Plot----
+ggplot(family_poverty_counts, aes(x = family_type, y = Proportion, fill = poverty_status)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Figure 7: Poverty Status by Family Type",
+    subtitle = "Distribution of Family Types by Poverty Status",
+    x = "Family Type",
+    y = "Proportion",
+    fill = "Poverty Status",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+
+```
+I was able to investigate the distribution of family types living below and above the poverty line using the FAMLIS variable. To explain simply, the FAMLIS variable indicates whether a family falls above or below the official poverty line (as defined by the U.S. Census Bureau). Unlike the household level analysis which used the HHS poverty guidelines, here I used the Census Bureau's official poverty thresholds. Interpreting these plots, finding that Female Householders have the highest poverty rate looks to be consistent with documented national trends found online (or well known). Female headed families are affected by poverty due to a combination of factors. There is gender wage gap, higher cost of child care, and the fact that women are more likely to be single parents with dependent children. Male Householders fall between Married Couples and Female Householders in terms of poverty rates. This is likely due to the fact that male headed families are more likely to be single parent households as well. It is also know fact that men generally earn higher wages than women and are less likely to be the primary caregiver for children. Lastly, Married Couples have the lowest poverty rate among the three family types. It too consistent with national data, as two income households generally have higher total earnings. As for what "other" data means, it represents families whose poverty status is not captured by the standard categories. As far as I can tell, it is possibly because their income falls into a range that doesn't fit neatly into the above/below/near classification, or because the variable  has different meanings depending on the family context.
+## Medical Premium Payments
+```{r, echo = FALSE}
+#----Figure 8 Data prep----
+# Create lookup table for family type labels
+family_type_lookup <- data.frame(
+  FKIND = 1:3,
+  family_type = c(
+    "Married Couple",
+    "Male Householder",
+    "Female Householder"
+  )
+)
+# Add family type labels and filter out missing premium values
+family_medical <- family %>%
+  left_join(family_type_lookup, by = "FKIND") %>%
+  filter(FMED_VAL >= 0) %>%  # Remove missing values (-1)
+  filter(!is.na(FMED_VAL))
+
+# Summary statistics by family type
+medical_summary <- family_medical %>%
+  group_by(family_type) %>%
+  summarise(
+    count = n(),
+    mean_premium = mean(FMED_VAL),
+    median_premium = median(FMED_VAL),
+    min_premium = min(FMED_VAL),
+    max_premium = max(FMED_VAL),
+    sd_premium = sd(FMED_VAL),
+    .groups = "drop"
+  )
+
+#----Figure 8 plot----
+ggplot(family_medical, aes(x = family_type, y = FMED_VAL, fill = family_type)) +
+  geom_boxplot() +
+  scale_y_continuous(labels = dollar) +
+  labs(
+    title = "Figure 8: Medical Premium Payments by Family Type",
+    subtitle = "Distribution of Annual Medical Premium Payments",
+    x = "Family Type",
+    y = "Medical Premium Payments ($)",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+```
+Here, I compared medical premium payments across the three family types. Medical premium payments are found in the FMED_VAL variable, which represents the total annual medical premium payments made by the family. To get an  accurate analysis, I filtered out observations with missing or negative values (FMED_VAL >= 0). These three box plots show Married Couples have the highest median medical premium payments, followed by Male Householders and Female Householders. The spread of the distributions also varies, with Married Couples showing the widest IQR and the highest maximum values. Female Householders have the most compressed distribution so far.
+
+## Imputation Methods
+```{r, echo = FALSE}
+#----Figure 9 Data prep----
+# lookup table for imputation methods
+imputation_method_lookup <- data.frame(
+  I_FMEDVAL = c(0, 1, 2, 3),
+  imputation_method = c(
+    "Not Imputed",
+    "Hot Deck",
+    "Mean Imputation",
+    "Regression Imputation"
+  )
+)
+
+# Add imputation method labels
+medical_imputation <- family %>%
+  left_join(imputation_method_lookup, by = "I_FMEDVAL") %>%
+  filter(!is.na(imputation_method))
+
+# Count by imputation method
+imputation_counts <- medical_imputation %>%
+  group_by(imputation_method) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Proportion = Count / sum(Count))
+
+#---Figure 9 impudence calculation & distribution----
+# Calculate proportion imputed
+total_imputed <- imputation_counts %>%
+  filter(imputation_method != "Not Imputed") %>%
+  summarise(Count = sum(Count)) %>%
+  pull(Count)
+
+total_records <- sum(imputation_counts$Count)
+imputation_proportion <- total_imputed / total_records
+
+cat("Proportion of medical premium values imputed:", 
+    percent(imputation_proportion, accuracy = 0.1), "\n")
+
+# Bar chart of imputation methods
+ggplot(imputation_counts, aes(x = imputation_method, y = Proportion, fill = imputation_method)) +
+  geom_col(width = 0.6) +
+  scale_y_continuous(labels = percent) +
+  geom_text(aes(label = percent(Proportion, accuracy = 0.1)), 
+            vjust = -0.5, 
+            size = 4) +
+  labs(
+    title = "Figure 9: Distribution of Imputation Methods for Medical Premiums",
+    x = "Imputation Method",
+    y = "Proportion",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+```
+Lastly I looked at the imputation methods used for medical premium payments in the family data set. The CPS uses imputation to fill missing values for certain variables, including medical premium payments. This imputation method is recorded in the I_FMEDVAL variable, which tells us whether a value was imputed and what method was used. This figure shows the distribution of imputation methods for medical premium payments. My analysis revealed that 38.7% of medical premium values were imputed, while the remaining 61.3% were reported directly by survey respondents. Among the imputed values, the distribution of imputation methods was as follows: Hot Deck imputation accounted for 13.6% of imputed cases, Regression Imputation accounted for 25.1%, and the remaining are not imputed cases or used other methods. Hot Deck imputation is a method where missing values are replaced with observed values from similar records (donors) in the same data set. From what I found, this method is preferred in survey data because it preserves the distribution of the variable and maintains relationships with other variables.  There is then Regression Imputation, which accounted for 25.1% of imputed cases, uses a regression model to predict missing values based on other variables in the dataset. Lastlty the majority of values were reported directly, with 61.3%. It is also worth noting that the overall imputation proportion of 38.7% is quite large, meaning that more than one third of medical premium values in the data set were not reported directly by respondents.
+
+# Conclusion
+My analysis of CPS data brought up a few important ideas about income and poverty across the U.S. First, it became clear pretty quickly that population size matters when you look at raw counts. We saw that California, Texas, Florida, and New York were dark on every income map, simply because of their high population counts. Looking at poverty rates, however, told a completely different story. It's actually more so the states in the South that have the highest poverty rates. That distinction matters because it moves the focus from where the poorest people live to where poverty is most concentrated, which surprised me. I've also compared Los Angeles and New York, which too told a different story depending on the data you use. Given that these two cities are dense as they are, it isn't surprising to see how both are mostly made up of houses and apartments. But when you start to look at poverty among single people living alone, LA had a higher poverty rate than New York. Though I'm not entirely sure why that might be (as it's not exactly the scope of this report), the job for a data statistician is to find these types of patterns and then to see if further statistical testing would be needed to confirm that the difference is statistically significant.
+
+At the family level, the patterns match about what you would expect. It was here where female headed households have the highest poverty rates, and just from what's already known, it unfortunately lines up with many national trends. Married couples, on the other hand, have the lowest poverty rates but pay the most for medical premiums. Male headed households fall somewhere in between for both these measures. While still analysing the family level, one thing I hadn't thought about before this project was how much imputation matters. If my calculations were correct here, almost 39% of medical premium values were imputed. This was mostly using regression imputation, but also through an approach called "hot deck". It's still worth keeping in mind that a good chunk of those numbers aren't actually reported values, however. So if there's one thing this project made clear to me, it's that the choices you make (whether to map counts or rates, how you classify poverty, or what you do with missing data) can completely change the story the data tells.
+
+# References
+
+Andridge, R. R., & Little, R. J. A. (2010). A review of hot deck imputation for survey non-response. International Statistical Review, 78(1), 40-64. https://pmc.ncbi.nlm.nih.gov/articles/PMC3130338/
+
+U.S. Census Bureau. (2024a). Current Population Survey, 2024 Annual Social and Economic Supplement. Retrieved from https://www.census.gov/data/datasets/2024/demo/cps/cps-asec-2024.html
+
+U.S. Census Bureau. (2024b). ANSI Codes for States. Retrieved from https://www.census.gov/library/reference/code-lists/ansi/ansi-codes-for-states.html
+
+U.S. Census Bureau. (2024c). Current Population Survey: 2024 Annual Social and Economic Supplement Technical Documentation. Retrieved from https://www2.census.gov/programs-surveys/cps/techdocs/cpsmar24.pdf
+
+U.S. Department of Health and Human Services. (2025). 2025 Poverty Guidelines. Retrieved from https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines
+# Appendix: Code {.appendix}
+
+```{r}
+#| ref-label: !expr knitr::all_labels()
+#| echo: true
+#| eval: false
+#----Load Libraries----
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+library(scales)
+library(maps)
+```
+
+```{r}
+#----Data Loading----
+# Load FIPS state code look up table
+fips <- read.csv("fips_abbrev.csv", header = TRUE, stringsAsFactors = FALSE)
+fips <- fips[, 1:3]
+colnames(fips) <- c("State", "FIPS", "USPS")
+
+# Load household-level data
+hh <- read.csv("hhpub24.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# Load family-level data
+family <- read.csv("ffpub24.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r}
+#----Figures 1,2,3 Data Prep----
+# Clean household data
+hh_clean <- hh %>%
+  filter(HEFAMINC >= 0) %>%           
+  mutate(FIPS = as.numeric(GESTFIPS)) %>%  
+  left_join(fips, by = "FIPS") %>%
+  filter(!is.na(State))
+
+# Load state map data
+states <- map_data("state")
+
+# Low Income (HEFAMINC 1-4)
+low_income <- hh_clean %>%
+  filter(HEFAMINC %in% c(1, 2, 3, 4))
+
+low_income_counts <- low_income %>%
+  group_by(State, USPS) %>%
+  summarise(Low_Income_Households = n(), .groups = "drop") %>%
+  mutate(region = tolower(State))
+
+# Middle Income (HEFAMINC 9-12)
+middle_income <- hh_clean %>%
+  filter(HEFAMINC %in% c(9, 10, 11, 12))
+
+middle_income_counts <- middle_income %>%
+  group_by(State, USPS) %>%
+  summarise(Middle_Income_Households = n(), .groups = "drop") %>%
+  mutate(region = tolower(State))
+
+# High Income (HEFAMINC 14-16)
+high_income <- hh_clean %>%
+  filter(HEFAMINC %in% c(14, 15, 16))
+
+high_income_counts <- high_income %>%
+  group_by(State, USPS) %>%
+  summarise(High_Income_Households = n(), .groups = "drop") %>%
+  mutate(region = tolower(State))
+
+# Join each income level with map data
+low_income_map <- states %>%
+  left_join(low_income_counts, by = "region")
+
+middle_income_map <- states %>%
+  left_join(middle_income_counts, by = "region")
+
+high_income_map <- states %>%
+  left_join(high_income_counts, by = "region")
+
+```
+
+```{r}
+#----Figure 1,2,3 plots----
+#Low income households plot
+ggplot(low_income_map, aes(x = long, y = lat, group = group, fill = Low_Income_Households)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "darkred",
+    labels = comma,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 1: Low Income Households by State",
+    subtitle = "Households earning less than $15,000 per year",
+    fill = "Number of Households",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal() 
+
+# Middle income households plot
+ggplot(middle_income_map, aes(x = long, y = lat, group = group, fill = Middle_Income_Households)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "darkblue",
+    labels = comma,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 2: Middle Income Households by State",
+    subtitle = "Households earning between $50,000 and $100,000 per year",
+    fill = "Number of Households",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+
+# High income households plot
+ggplot(high_income_map, aes(x = long, y = lat, group = group, fill = High_Income_Households)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "darkgreen",
+    labels = comma,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 3: High Income Households by State",
+    subtitle = "Households earning $150,000 or more per year",
+    fill = "Number of Households",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#----Figure 4 Data Prep----
+#lookup tables
+poverty_lookup <- data.frame(
+  household_size = 1:5,
+  poverty_guideline = c(15650, 21150, 26650, 32150, 37650)
+)
+
+income_lookup <- data.frame(
+  HEFAMINC = 1:16,
+  income_midpoint = c(5000, 7500, 11250, 13750, 17500, 22500, 27500, 35000,
+                      45000, 55000, 67500, 87500, 125000, 175000, 225000, 275000)
+)
+
+size_lookup <- data.frame(
+  H_HHNUM = 1:5,
+  household_size = 1:5
+)
+
+#hh_poverty using joins and filters
+hh_poverty <- hh_clean %>%
+  filter(H_HHNUM >= 1 & H_HHNUM <= 5) %>%
+  left_join(size_lookup, by = "H_HHNUM") %>%
+  left_join(poverty_lookup, by = "household_size") %>%
+  left_join(income_lookup, by = "HEFAMINC") %>%
+  filter(!is.na(income_midpoint))
+
+#below/above poverty
+below_poverty <- hh_poverty %>%
+  filter(income_midpoint < poverty_guideline) %>%
+  mutate(below_poverty = 1)
+
+above_poverty <- hh_poverty %>%
+  filter(income_midpoint >= poverty_guideline) %>%
+  mutate(below_poverty = 0)
+
+hh_poverty <- bind_rows(below_poverty, above_poverty)
+
+# Aggregate by state, join w/ map data
+state_poverty <- hh_poverty %>%
+  group_by(State, USPS) %>%
+  summarise(
+    total_households = n(),
+    below_poverty_count = sum(below_poverty),
+    poverty_proportion = below_poverty_count / total_households,
+    .groups = "drop"
+  ) %>%
+  mutate(region = tolower(State))
+
+poverty_map <- states %>%
+  left_join(state_poverty, by = "region")
+```
+
+```{r}
+#----Figure 4 plot----
+# Plot
+ggplot(poverty_map, aes(x = long, y = lat, group = group, fill = poverty_proportion)) +
+  geom_polygon(color = "grey50", size = 0.2) +
+  coord_quickmap() +
+  scale_fill_gradient(
+    low = "lightyellow",
+    high = "red",
+    labels = percent,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Figure 4: Proportion of Households Below Poverty Line by State",
+    fill = "Proportion Below Poverty",
+    caption = "Source:  United States Department of Health and Human Services (HHS)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#----Figure 5 Data Prep----
+# look up table for housing types
+# Codes 1-5 = House/Apartment, 6-7 = Mobile Home, 8-9 = Group Quarters
+housing_lookup <- data.frame(
+  HRHTYPE = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+  housing_type = c("Unknown","House/Apartment","House/Apartment","House/Apartment","House/Apartment",
+    "House/Apartment","Mobile Home","Mobile Home","Group Quarters","Group Quarters","Other"
+  )
+)
+
+# lookup table for CBSA codes 
+cbsa_lookup <- data.frame(
+  GTCBSA = c(31080, 35620),
+  cbsa_name = c("Los Angeles-Long Beach-Anaheim", "New York-Newark-Jersey City")
+)
+
+# Filter to LA and NY areas. Join w/ look up tables
+hh_cbsa <- hh_clean %>%
+  filter(GTCBSA %in% c(31080, 35620)) %>%
+  left_join(cbsa_lookup, by = "GTCBSA") %>%
+  left_join(housing_lookup, by = "HRHTYPE") %>%
+  filter(!is.na(cbsa_name))
+
+# Count housing types
+housing_counts <- hh_cbsa %>%
+  group_by(cbsa_name, housing_type) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(cbsa_name) %>%
+  mutate(Proportion = Count / sum(Count))
+```
+
+```{r}
+#----Figure 5 Plot----
+# Plot
+ggplot(housing_counts, aes(x = housing_type, y = Proportion, fill = cbsa_name)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Figure 5: Housing Type Distribution (LA vs NYC)",
+    x = "Housing Type",
+    y = "Proportion of Households",
+    fill = "Metropolitan Area",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#----Figure 6 Data Prep----
+# Single individuals are households with H_HHNUM == 1
+single_households <- hh_poverty %>%
+  filter(H_HHNUM == 1) %>%
+  filter(GTCBSA %in% c(31080, 35620)) %>%
+  left_join(cbsa_lookup, by = "GTCBSA") %>%
+  filter(!is.na(cbsa_name))
+
+# Calculate poverty rate for single individuals by CBSA
+single_poverty <- single_households %>%
+  group_by(cbsa_name) %>%
+  summarise(
+    total_single = n(),
+    below_poverty_count = sum(below_poverty),
+    poverty_proportion = below_poverty_count / total_single,
+    .groups = "drop"
+  )
+```
+
+```{r}
+#----Figure 6 plot----
+# Plot
+ggplot(single_poverty, aes(x = cbsa_name, y = poverty_proportion, fill = cbsa_name)) +
+  geom_col(width = 0.6) +
+  scale_y_continuous(labels = percent, limits = c(0, max(single_poverty$poverty_proportion) * 1.2)) +
+  geom_text(aes(label = percent(poverty_proportion, accuracy = 0.1)), 
+            vjust = -0.5, 
+            size = 5) +
+  labs(
+    title = "Figure 6: Poverty Rate Among Single Individuals",
+    subtitle = "Los Angeles vs New York Metropolitan Areas",
+    x = "Metropolitan Area",
+    y = "Proportion Below Poverty",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal() 
+
+```
+
+```{r}
+#----Data Missingness----
+any_na <- any(is.na(hh_clean))
+cat("Are there missing values in the dataset?", any_na, "\n")
+
+# Count total missing values
+total_na <- sum(is.na(hh_clean))
+cat("Total missing values:", total_na, "\n")
+```
+
+```{r}
+#----Figure 7 Data Prep----
+# Create lookup table for family type labels
+family_type_lookup <- data.frame(
+  FKIND = 1:3,
+  family_type = c(
+    "Married Couple",
+    "Male Householder",
+    "Female Householder"
+  )
+)
+
+# Create lookup table for poverty status labels
+poverty_lookup <- data.frame(
+  FAMLIS = c(1, 2, 3, 4),
+  poverty_status = c(
+    "Above Poverty",
+    "Below Poverty",
+    "Near Poverty",
+    "Other"
+  )
+)
+
+# Add labels using joins
+family_poverty <- family %>%
+  left_join(family_type_lookup, by = "FKIND") %>%
+  left_join(poverty_lookup, by = "FAMLIS") %>%
+  filter(!is.na(poverty_status))
+
+# Count by family type and poverty status
+family_poverty_counts <- family_poverty %>%
+  group_by(family_type, poverty_status) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(family_type) %>%
+  mutate(Proportion = Count / sum(Count))
+```
+
+```{r}
+#----Figure 7 Plot----
+ggplot(family_poverty_counts, aes(x = family_type, y = Proportion, fill = poverty_status)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Figure 7: Poverty Status by Family Type",
+    subtitle = "Distribution of Family Types by Poverty Status",
+    x = "Family Type",
+    y = "Proportion",
+    fill = "Poverty Status",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+#----Figure 8 Data prep----
+# Create lookup table for family type labels
+family_type_lookup <- data.frame(
+  FKIND = 1:3,
+  family_type = c(
+    "Married Couple",
+    "Male Householder",
+    "Female Householder"
+  )
+)
+# Add family type labels and filter out missing premium values
+family_medical <- family %>%
+  left_join(family_type_lookup, by = "FKIND") %>%
+  filter(FMED_VAL >= 0) %>%  # Remove missing values (-1)
+  filter(!is.na(FMED_VAL))
+
+# Summary statistics by family type
+medical_summary <- family_medical %>%
+  group_by(family_type) %>%
+  summarise(
+    count = n(),
+    mean_premium = mean(FMED_VAL),
+    median_premium = median(FMED_VAL),
+    min_premium = min(FMED_VAL),
+    max_premium = max(FMED_VAL),
+    sd_premium = sd(FMED_VAL),
+    .groups = "drop"
+  )
+```
+
+```{r}
+#----Figure 8 plot----
+ggplot(family_medical, aes(x = family_type, y = FMED_VAL, fill = family_type)) +
+  geom_boxplot() +
+  scale_y_continuous(labels = dollar) +
+  labs(
+    title = "Figure 8: Medical Premium Payments by Family Type",
+    subtitle = "Distribution of Annual Medical Premium Payments",
+    x = "Family Type",
+    y = "Medical Premium Payments ($)",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+#----Figure 9 Data prep----
+# lookup table for imputation methods
+imputation_method_lookup <- data.frame(
+  I_FMEDVAL = c(0, 1, 2, 3),
+  imputation_method = c(
+    "Not Imputed",
+    "Hot Deck",
+    "Mean Imputation",
+    "Regression Imputation"
+  )
+)
+
+# Add imputation method labels
+medical_imputation <- family %>%
+  left_join(imputation_method_lookup, by = "I_FMEDVAL") %>%
+  filter(!is.na(imputation_method))
+
+# Count by imputation method
+imputation_counts <- medical_imputation %>%
+  group_by(imputation_method) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Proportion = Count / sum(Count))
+```
+
+```{r}
+#---Figure 9 impudence calculation & distribution----
+# Calculate proportion imputed
+total_imputed <- imputation_counts %>%
+  filter(imputation_method != "Not Imputed") %>%
+  summarise(Count = sum(Count)) %>%
+  pull(Count)
+
+total_records <- sum(imputation_counts$Count)
+imputation_proportion <- total_imputed / total_records
+
+cat("Proportion of medical premium values imputed:", 
+    percent(imputation_proportion, accuracy = 0.1), "\n")
+
+# Bar chart of imputation methods
+ggplot(imputation_counts, aes(x = imputation_method, y = Proportion, fill = imputation_method)) +
+  geom_col(width = 0.6) +
+  scale_y_continuous(labels = percent) +
+  geom_text(aes(label = percent(Proportion, accuracy = 0.1)), 
+            vjust = -0.5, 
+            size = 4) +
+  labs(
+    title = "Figure 9: Distribution of Imputation Methods for Medical Premiums",
+    x = "Imputation Method",
+    y = "Proportion",
+    caption = "Source: CPS ASEC 2024"
+  ) +
+  theme_minimal()
+```
